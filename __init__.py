@@ -2,7 +2,7 @@ bl_info = {
     "name": "Align 3D Cursor to Edges",
     "description": "Rotate 3D cursor to align its axes with selected edges.",
     "author": "Zyl",
-    "version": (1, 0),
+    "version": (1, 1),
     "blender": (3, 4, 0),
     "category": "3D View"
 }
@@ -43,6 +43,8 @@ class VIEW3D_OT_align_cursor_to_edges(bpy.types.Operator):
     bl_idname = "view3d.align_cursor_to_edges"
     bl_label = "Align 3D Cursor to Edges"
 
+    moveCursor: bpy.props.BoolProperty(name="Move Cursor", default=True)
+
     @classmethod
     def poll(self, context: bpy.types.Context):
         return context.active_object is not None and context.active_object.mode == 'EDIT'
@@ -51,62 +53,70 @@ class VIEW3D_OT_align_cursor_to_edges(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(context.active_object.data)
         edges = [e for e in bm.edges if e.select]
         if len(edges) == 2:
-            mainEdge = (context.active_object.matrix_world @ edges[0].verts[0].co, context.active_object.matrix_world @ edges[0].verts[1].co)
-            secondaryEdge = (context.active_object.matrix_world @ edges[1].verts[0].co, context.active_object.matrix_world @ edges[1].verts[1].co)
-            if 'EDGE' in bm.select_mode and bm.select_history.active is not None and bm.select_history.active.index != mainEdge.index:
-                mainEdge, secondaryEdge = secondaryEdge, mainEdge
-            mainAxis = Vector(np.subtract(mainEdge[1], mainEdge[0])).normalized()
-            secondaryAxisHint = Vector(np.subtract(secondaryEdge[1], secondaryEdge[0])).normalized()
-            secondaryAxis = mainAxis.cross(secondaryAxisHint).normalized()
-            mainAxisMajor = getMajorAxis(mainAxis)
-            secondaryAxisMajor = getMajorAxis(secondaryAxis)
-            if mainAxisMajor[0] == -1 or mainAxisMajor[1] == -1 or mainAxisMajor[2] == -1:
-                mainAxis = -1 * mainAxis
+            i0, i1 = 0, 1
+            if 'EDGE' in bm.select_mode and bm.select_history.active is not None and bm.select_history.active.index != edges[i0].index:
+                i0, i1 = i1, i0
+            edgeImportant = (context.active_object.matrix_world @ edges[i0].verts[0].co, context.active_object.matrix_world @ edges[i0].verts[1].co)
+            edgeSecondary = (context.active_object.matrix_world @ edges[i1].verts[0].co, context.active_object.matrix_world @ edges[i1].verts[1].co)
+            if edges[i0].verts[1] == edges[i1].verts[0] or edges[i0].verts[1] == edges[i1].verts[1]:
+                coCursorNew = edgeImportant[1]
+            else:
+                coCursorNew = edgeImportant[0]
+            axisImportant = Vector(np.subtract(edgeImportant[1], edgeImportant[0])).normalized()
+            axisSecondaryHint = Vector(np.subtract(edgeSecondary[1], edgeSecondary[0])).normalized()
+            axisSecondary = axisImportant.cross(axisSecondaryHint).normalized()
+            axisImportantMajor = getMajorAxis(axisImportant)
+            axisSecondaryMajor = getMajorAxis(axisSecondary)
+            if axisImportantMajor[0] == -1 or axisImportantMajor[1] == -1 or axisImportantMajor[2] == -1:
+                axisImportant = -1 * axisImportant
 
-            if abs(mainAxisMajor[0]) == 1:
-                xAxis = mainAxis
-                if abs(secondaryAxisMajor[1]) == 1:
-                    if secondaryAxis[1] < 0:
-                        secondaryAxis = -1 * secondaryAxis
-                    yAxis = secondaryAxis
+            if abs(axisImportantMajor[0]) == 1:
+                xAxis = axisImportant
+                if abs(axisSecondaryMajor[1]) == 1:
+                    if axisSecondary[1] < 0:
+                        axisSecondary = -1 * axisSecondary
+                    yAxis = axisSecondary
                     zAxis = xAxis.cross(yAxis)
                 else:
-                    if secondaryAxis[2] < 0:
-                        secondaryAxis = -1 * secondaryAxis
-                    zAxis = secondaryAxis
+                    if axisSecondary[2] < 0:
+                        axisSecondary = -1 * axisSecondary
+                    zAxis = axisSecondary
                     yAxis = xAxis.cross(zAxis)
-            elif abs(mainAxisMajor[1]) == 1:
-                yAxis = mainAxis
-                if abs(secondaryAxisMajor[0]) == 1:
-                    if secondaryAxis[0] < 0:
-                        secondaryAxis = -1 * secondaryAxis
-                    xAxis = secondaryAxis
+            elif abs(axisImportantMajor[1]) == 1:
+                yAxis = axisImportant
+                if abs(axisSecondaryMajor[0]) == 1:
+                    if axisSecondary[0] < 0:
+                        axisSecondary = -1 * axisSecondary
+                    xAxis = axisSecondary
                     zAxis = xAxis.cross(yAxis)
                 else:
-                    if secondaryAxis[2] < 0:
-                        secondaryAxis = -1 * secondaryAxis
-                    zAxis = secondaryAxis
+                    if axisSecondary[2] < 0:
+                        axisSecondary = -1 * axisSecondary
+                    zAxis = axisSecondary
                     xAxis = zAxis.cross(yAxis)
             else:
-                zAxis = mainAxis
-                if abs(secondaryAxisMajor[0]) == 1:
-                    if secondaryAxis[0] < 0:
-                        secondaryAxis = -1 * secondaryAxis
-                    xAxis = secondaryAxis
+                zAxis = axisImportant
+                if abs(axisSecondaryMajor[0]) == 1:
+                    if axisSecondary[0] < 0:
+                        axisSecondary = -1 * axisSecondary
+                    xAxis = axisSecondary
                     yAxis = xAxis.cross(zAxis)
                 else:
-                    if secondaryAxis[1] < 0:
-                        secondaryAxis = -1 * secondaryAxis
-                    yAxis = secondaryAxis
+                    if axisSecondary[1] < 0:
+                        axisSecondary = -1 * axisSecondary
+                    yAxis = axisSecondary
                     xAxis = zAxis.cross(yAxis)
 
-            thereMatrix = Matrix(((xAxis[0], yAxis[0], zAxis[0], 0.0), (xAxis[1], yAxis[1], zAxis[1], 0.0), (xAxis[2], yAxis[2], zAxis[2], 0.0), (0.0, 0.0, 0.0, 1.0)))
-            quat = thereMatrix.to_quaternion()
-            originalRotationMode = context.scene.cursor.rotation_mode
-            context.scene.cursor.rotation_mode = 'QUATERNION'
-            context.scene.cursor.rotation_quaternion = quat
-            if originalRotationMode != 'QUATERNION':
-                context.scene.cursor.rotation_mode = originalRotationMode
+            matrixCursorNew = Matrix(((xAxis[0], yAxis[0], zAxis[0], 0.0), (xAxis[1], yAxis[1], zAxis[1], 0.0), (xAxis[2], yAxis[2], zAxis[2], 0.0), (0.0, 0.0, 0.0, 1.0)))
+            rotationCursorNew = matrixCursorNew.to_quaternion()
+            rotationModeOriginal = context.scene.cursor.rotation_mode
+            if context.scene.cursor.rotation_mode != 'QUATERNION':
+                context.scene.cursor.rotation_mode = 'QUATERNION'
+            if self.moveCursor:
+                context.scene.cursor.location = coCursorNew
+            context.scene.cursor.rotation_quaternion = rotationCursorNew
+            if rotationModeOriginal != 'QUATERNION':
+                context.scene.cursor.rotation_mode = rotationModeOriginal
         else:
             self.report({'ERROR'}, "Need to select two edges.")
             return {"CANCELLED"}
